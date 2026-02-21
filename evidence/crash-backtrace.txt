@@ -1,0 +1,40 @@
+Router 8.0.43-34 Bootstrap Crash Backtrace
+==========================================
+Captured on: Debian Bullseye x86_64
+Packages: percona-mysql-router 8.0.43-34-1.bullseye
+Trigger: mysqlrouter --bootstrap root:***@localhost:3306 --directory /tmp/mysqlrouter --user=root --force
+
+Application got fatal signal: 11
+stack_bottom = 0 thread_stack 0x0
+/usr/lib/mysqlrouter/private/libmysqlharness.so.1(my_print_stacktrace(unsigned char const*, unsigned long)+0x2e) [0x4003182a5e]
+/usr/lib/mysqlrouter/private/libmysqlharness.so.1(+0x9d31d) [0x400317431d]
+/lib/x86_64-linux-gnu/libpthread.so.0(+0x13140) [0x400290f140]
+/usr/lib/mysqlrouter/private/libmysqlrouter.so.1(file_info::RegisterFilename(int, char const*, file_info::OpenType)+0x58) [0x4002a7ef88]
+/usr/lib/mysqlrouter/private/libmysqlrouter.so.1(my_open(char const*, int, int)+0x5e) [0x40029ff39e]
+/usr/lib/mysqlrouter/private/libmysqlrouter.so.1(+0x1a40ad) [0x4002aca0ad]
+/usr/lib/mysqlrouter/private/libmysqlrouter.so.1(+0xd6680) [0x40029fc680]
+/lib/x86_64-linux-gnu/libpthread.so.0(+0x1034f) [0x400290c34f]
+/usr/lib/mysqlrouter/private/libmysqlrouter.so.1(my_charset_get_by_name(MY_CHARSET_LOADER*, char const*, unsigned int, int)+0x72) [0x40029fcb22]
+/usr/lib/mysqlrouter/private/libmysqlrouter.so.1(get_charset_by_csname(char const*, unsigned int, int)+0x80) [0x40029fcc30]
+/usr/lib/mysqlrouter/private/libmysqlrouter.so.1(mysql_init_character_set(MYSQL*)+0x6f) [0x40029d4dcf]
+/usr/lib/mysqlrouter/private/libmysqlrouter.so.1(+0xb22fb) [0x40029d82fb]
+/usr/lib/mysqlrouter/private/libmysqlrouter.so.1(connect_helper+0x29) [0x40029d87a9]
+/usr/lib/mysqlrouter/private/libmysqlrouter.so.1(mysql_real_connect+0x110) [0x40029d28a0]
+/usr/lib/mysqlrouter/private/libmysqlrouter.so.1(mysqlrouter::MySQLSession::connect(...)+...)
+mysqlrouter(+0x3e248) [0x400003e248]
+mysqlrouter(+0x332d3) [0x40000332d3]
+mysqlrouter(+0x2cdad) [0x400002cdad]
+mysqlrouter(+0x75c64) [0x4000075c64]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0xea) [0x4003749d7a]
+mysqlrouter(+0x261da) [0x40000261da]
+
+Call chain:
+  mysqlrouter --bootstrap
+    -> MySQLSession::connect
+      -> mysql_real_connect
+        -> mysql_init_character_set
+          -> get_charset_by_csname
+            -> my_charset_get_by_name
+              -> my_open
+                -> RegisterFilename
+                  -> SIGSEGV (signal 11): NULL dereference of fivp

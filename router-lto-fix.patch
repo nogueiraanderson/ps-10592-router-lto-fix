@@ -1,0 +1,42 @@
+From: Anderson Nogueira <anderson.nogueira@percona.com>
+Subject: [PATCH] router: strip -flto flags to prevent mysys duplication in plugins
+
+LTO merges the static mysys convenience library into the mysqlrouter
+binary and plugin .so files, creating multiple copies of the fivp file
+info vector pointer (mysys/my_file.cc, anonymous namespace, internal
+linkage per object). The binary's my_init() initializes only the
+binary's fivp, leaving libmysqlrouter.so.1's copy as NULL. During
+bootstrap, mysql_real_connect in libmysqlrouter.so.1 calls
+mysql_init_character_set -> my_open -> RegisterFilename, which
+dereferences the library's NULL fivp, causing SIGSEGV.
+
+This follows the existing pattern in router/CMakeLists.txt (lines 37-38)
+which strips -fuse-ld=gold for certain Clang versions.
+
+Affects: Percona Server 8.0.43-34 through at least 8.0.45-36.
+Ref: PS-10592, PKG-870, Forum #39242
+---
+ router/CMakeLists.txt | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/router/CMakeLists.txt b/router/CMakeLists.txt
+index 0431cf37..d3b85a7a 100644
+--- a/router/CMakeLists.txt
++++ b/router/CMakeLists.txt
+@@ -38,6 +38,16 @@ IF(USE_LD_LLD AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND
+   STRING(REPLACE "-fuse-ld=gold" "" CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS}")
+ ENDIF()
+
++# LTO merges static mysys into the binary and plugin .so files, creating
++# duplicate fivp copies. The binary's my_init() only initializes its own
++# copy, leaving libmysqlrouter.so.1's fivp NULL. Strip -flto from Router.
++IF(WITH_LTO)
++  STRING(REGEX REPLACE "-flto[^ ]*" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
++  STRING(REGEX REPLACE "-flto[^ ]*" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
++  STRING(REGEX REPLACE "-flto[^ ]*" "" CMAKE_CXX_LINK_FLAGS "${CMAKE_CXX_LINK_FLAGS}")
++  STRING(REGEX REPLACE "-flto[^ ]*" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}")
++ENDIF()
++
+ INCLUDE(cmake/version.cmake)
+ SET(CMAKE_MODULE_PATH
+   ${CMAKE_MODULE_PATH}

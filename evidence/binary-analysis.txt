@@ -1,0 +1,84 @@
+Binary Analysis: Router Plugin Symbol Tables (8.0.42 vs 8.0.43)
+===============================================================
+Captured on: Debian Bullseye x86_64
+Tool: readelf -Ws
+
+=== Router 8.0.42-33 (no LTO) ===
+
+Package: percona-mysql-router 8.0.42-33-1.bullseye
+
+metadata_cache.so: 85,176 bytes
+  RegisterFilename symbols: 0 (none)
+
+routing.so: 109,984 bytes
+  RegisterFilename symbols: 0 (none)
+
+libmysqlrouter.so.1: 8,086,976 bytes
+  RegisterFilename symbols: 1
+  1947: 00000000001970d0   949 FUNC    GLOBAL DEFAULT   12 _ZN9file_info16RegisterFilenameEiPKcNS_8OpenTypeE
+
+Conclusion: Plugins are thin wrappers. RegisterFilename exists only in
+libmysqlrouter.so.1. Plugin calls to RegisterFilename are resolved at
+runtime via the PLT to libmysqlrouter.so.1's copy. Only one fivp exists
+(in libmysqlrouter.so.1), and it is properly initialized by my_init().
+
+
+=== Router 8.0.43-34 (LTO: -DWITH_LTO=ON) ===
+
+Package: percona-mysql-router 8.0.43-34-1.bullseye
+
+metadata_cache.so: 7,667,352 bytes (90x larger)
+  RegisterFilename symbols: 1
+  1516: 00000000001135b0   965 FUNC    GLOBAL DEFAULT   12 _ZN9file_info16RegisterFilenameEiPKcNS_8OpenTypeE
+
+routing.so: 97,416 bytes
+  RegisterFilename symbols: 0
+
+libmysqlrouter.so.1: 8,040,088 bytes
+  RegisterFilename symbols: 1
+  1788: 0000000000158f30   965 FUNC    GLOBAL DEFAULT   12 _ZN9file_info16RegisterFilenameEiPKcNS_8OpenTypeE
+
+Conclusion: LTO merged mysys into both the mysqlrouter binary and
+metadata_cache.so, creating multiple fivp copies. The binary's my_init()
+initializes only the binary's fivp. libmysqlrouter.so.1's fivp is never
+initialized because its my_init() is shadowed by the binary's embedded
+copy. During bootstrap, mysql_real_connect in libmysqlrouter.so.1 calls
+RegisterFilename which dereferences the library's NULL fivp, causing
+SIGSEGV. The crash backtrace confirms all frames are in
+libmysqlrouter.so.1 (see crash-backtrace.txt).
+
+
+=== Router Source Build (patched, no LTO in Router) ===
+
+Built from: Percona-Server-8.0.43-34 source + router-lto-fix.patch
+Platform: Debian Bullseye x86_64 (native, c7i.8xlarge EC2, GCC 10)
+Build flags: -DWITH_LTO=ON (patch strips -flto from Router subdirectory only)
+
+metadata_cache.so: 525,696 bytes (513KB)
+  RegisterFilename symbols: 0 (none)
+
+routing.so: 817,672 bytes (798KB)
+  RegisterFilename symbols: 0 (none)
+
+libmysqlrouter.so.1: 13,089,792 bytes (12MB)
+  RegisterFilename symbols: 1 (expected, libmysqlrouter owns mysys)
+  1788: ...   965 FUNC    GLOBAL DEFAULT   12 _ZN9file_info16RegisterFilenameEiPKcNS_8OpenTypeE
+
+rest_metadata_cache.so: 10,843,384 bytes (10MB)
+  RegisterFilename symbols: 3
+  NOTE: REST plugins are not loaded during bootstrap (crash path), so
+  these symbols do not trigger the SIGSEGV. They may warrant a separate
+  investigation for runtime stability.
+
+Conclusion: The patch eliminates RegisterFilename from the crash-path
+plugins (metadata_cache.so and routing.so). These plugins now resolve
+mysys symbols via the PLT to libmysqlrouter.so.1, just like 8.0.42.
+Bootstrap completes cleanly with no SIGSEGV.
+
+
+=== Three-Way Size Comparison ===
+
+File                     8.0.42 APT    8.0.43 APT    Patched Build    Notes
+metadata_cache.so           85,176     7,667,352        525,696       0 RegFile in 8.0.42 + patched
+routing.so                 109,984        97,416        817,672       0 RegFile in all three
+libmysqlrouter.so.1     8,086,976     8,040,088     13,089,792       1 RegFile in all three (expected)
